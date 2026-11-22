@@ -12,9 +12,6 @@ dependencies:
   is_logbook_format: ^0.1.0
 
 dev_dependencies:
-  is_logbook:
-    git:
-      url: https://github.com/intersyntactic/logbook
-      ref: logbook-format
+  is_logbook: ^0.3.1
   lints: ^6.1.0
   test: ^1.33.0
