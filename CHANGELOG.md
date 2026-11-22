@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0
+
+Depends on [is_logbook_format](https://pub.dev/packages/is_logbook_format)
+in place of [is_logbook](https://pub.dev/packages/is_logbook). The client
+used only the format (`Kind`, `ObjectId` and `LogbookEntry`), but depending
+on is_logbook handed every program on this client the logbook's writer, so
+it could open the logbook's directory and append past the service's sender
+table and ownership checks. Now it can only reach the logbook through the
+service's sockets, and a test walks the imports from `lib/` and `bin/` to
+keep it that way.
+
+- `Kind` and `ObjectId` are still re-exported from this package, now from
+  is_logbook_format; code that takes them from here does not change.
+- A program that imports both this client and `package:is_logbook` needs
+  is_logbook 0.3.1 or later, which re-exports the same `Kind`; on is_logbook
+  0.3.0 the two `Kind`s are different classes.
+- For services on is_logbook 0.3: a service refuses a sender table naming
+  user 65534 (`nobody`) or 4294967294–4294967295, and closes a trajectory on
+  `trajectory-closed` (`Kind.trajectoryClosed`); writes to a closed
+  trajectory come back as `WriteRefused` with why
+  `trajectory-closed <trajectory>`.
+- Nothing on the wire changes.
+
 ## 0.2.0
 
 For [is_logbook 0.2.0](https://pub.dev/packages/is_logbook/versions/0.2.0),

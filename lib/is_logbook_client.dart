@@ -27,11 +27,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:is_logbook/is_logbook.dart';
-import 'package:is_logbook/service.dart' show Kind;
+import 'package:is_logbook_format/is_logbook_format.dart';
 
-export 'package:is_logbook/is_logbook.dart' show ObjectId;
-export 'package:is_logbook/service.dart' show Kind;
+export 'package:is_logbook_format/is_logbook_format.dart' show Kind, ObjectId;
 
 /// What the writer said became of one entry.
 sealed class WriteResult {
@@ -468,7 +466,7 @@ final class LogbookReader {
     final words = line.split(' ');
     final id = ObjectId.parse(words[1]);
     final (kind, previous) = switch ((
-      _orNone(words[2], _kind),
+      _orNone(words[2], Kind.read),
       _orNone(words[3], ObjectId.parse),
     )) {
       ((final k,)?, (final p,)?) when k != null || p == null => (k, p),
@@ -508,9 +506,6 @@ final class LogbookReader {
       null => null,
     };
   }
-
-  static Kind? _kind(String name) =>
-      name == Kind.started.name ? Kind.started : Kind.parse(name);
 
   static bool _startsWith(Uint8List bytes, Uint8List prefix) {
     for (var i = 0; i < prefix.length; i++) {

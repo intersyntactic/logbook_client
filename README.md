@@ -4,6 +4,11 @@ The one client for an [is_logbook](https://pub.dev/packages/is_logbook)
 service: a writer for its write socket and a reader for its read socket. It
 replaces the copies of the socket protocol that each program used to carry.
 
+It depends on [is_logbook_format](https://pub.dev/packages/is_logbook_format),
+the entry format alone, and not on is_logbook: a program on this client
+reaches the logbook only through the service's sockets, never by opening its
+directory. `Kind` and `ObjectId` are re-exported from here.
+
 An entry is its bytes, `<kind>\n<previous>\n<body>`, and its id is their
 `ObjectId` (their sha256). The same bytes are always the same entry.
 
