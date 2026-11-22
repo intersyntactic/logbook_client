@@ -9,10 +9,7 @@ environment:
   sdk: ^3.13.0
 
 dependencies:
-  is_logbook_format:
-    git:
-      url: https://github.com/intersyntactic/logbook_format
-      ref: first-release
+  is_logbook_format: ^0.1.0
 
 dev_dependencies:
   is_logbook:
