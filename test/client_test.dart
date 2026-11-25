@@ -225,10 +225,10 @@ void main() {
       final a = ObjectId.of(bytesOf('turn\n-\na')).hex;
       final x = ObjectId.of(bytesOf('x')).hex;
       for (final (name, frame, why) in [
-        ('other-bytes', 'entry $a turn - 8\nturn\n-\nb', 'another entry'),
-        ('other-header', 'entry $a witnessed - 8\nturn\n-\na', 'header'),
-        ('no-header', 'entry $x - - 1\nx', 'without a header'),
-        ('previous-no-kind', 'entry $x - $a 1\nx', 'not an entry frame'),
+        ('other-bytes', 'entry $a turn - 8 -\nturn\n-\nb', 'another entry'),
+        ('other-header', 'entry $a witnessed - 8 -\nturn\n-\na', 'header'),
+        ('no-header', 'entry $x - - 1 -\nx', 'without a header'),
+        ('previous-no-kind', 'entry $x - $a 1 -\nx', 'not an entry frame'),
       ]) {
         final server = await fake('${dir.path}/$name.sock', frame);
         await expectLater(
@@ -273,7 +273,7 @@ void main() {
       ).encode().map((b) => b.toRadixString(16).padLeft(2, '0')).join();
       final server = await fake(
         '${dir.path}/bare.sock',
-        'entry ${x.hex} - - 1 $link\nx',
+        'entry ${x.hex} - - 1 - $link\nx',
       );
       final got = await LogbookReader('${dir.path}/bare.sock').get(x);
       expect((got as GotEntryWithoutHeader).id, x);
@@ -334,10 +334,10 @@ void main() {
       final answer = utf8.decode(await s.expand((c) => c).toList());
       s.destroy();
       final words = answer.split(' ');
-      final hex = words[5];
+      final hex = words[6];
       // Hex characters 128 to 191 spell the object's name; flip the first.
       final flipped = hex.replaceRange(128, 129, hex[128] == '0' ? '1' : '0');
-      final lied = [...words.sublist(0, 5), flipped].join(' ');
+      final lied = [...words.sublist(0, 6), flipped].join(' ');
       final server = await fake('${dir.path}/link.sock', lied);
       expect(
         LogbookReader('${dir.path}/link.sock').get(a),
@@ -363,6 +363,89 @@ void main() {
       );
       await Future<void>.delayed(const Duration(milliseconds: 100));
       await server.close();
+    });
+  });
+
+  group('trajectory', () {
+    final trajectory = TrajectoryId.parse('a1' * 32)!;
+
+    setUp(() async {
+      // A table where this user may assign a trajectory to itself, with a
+      // suit of uid 9001, and reply-chunk attaches to a trajectory's chain.
+      await service.close();
+      service = await LogbookService.start(
+        Logbook.open(Directory('${dir.path}/t'))!,
+        SenderTable.parse(
+          bytesOf(
+            '$me users-assigned-to-trajectory turn reply-chunk\n'
+            'attaching: reply-chunk\n',
+          ),
+        ),
+        File('${dir.path}/w.sock'),
+        readSocket: File('${dir.path}/r.sock'),
+      );
+    });
+
+    test(
+      'says which trajectory owns each entry, on subscribe and get',
+      () async {
+        final a = await write(
+          'users-assigned-to-trajectory',
+          '{"trajectory":"${trajectory.hex}","mission":"${'b1' * 32}",'
+              '"loopUser":"$me","suit":"9001"}',
+        );
+        final t = await write('turn', 't', a);
+        // An attached root names its parent in its first body line: it is the
+        // parent's trajectory's, though it starts a chain of its own.
+        final r = await write('reply-chunk', '$a\nchunk');
+        final unowned = await write('turn', 'u');
+
+        final expected = {
+          a: trajectory,
+          t: trajectory,
+          r: trajectory,
+          unowned: null,
+        };
+        final subscribed = await reader
+            .subscribe(
+              kinds: {
+                Kind.usersAssignedToTrajectory,
+                kind('turn'),
+                kind('reply-chunk'),
+              },
+            )
+            .takeWhile((s) => s is Entry)
+            .cast<Entry>()
+            .toList();
+        expect({for (final e in subscribed) e.id: e.trajectory}, expected);
+        for (final MapEntry(key: id, value: owner) in expected.entries) {
+          final got = await reader.get(id);
+          expect((got as GotEntry).entry.trajectory, owner, reason: id.hex);
+        }
+      },
+    );
+
+    test('is broken on a trajectory word the service never sends', () async {
+      final a = ObjectId.of(bytesOf('turn\n-\na')).hex;
+      final x = ObjectId.of(bytesOf('x')).hex;
+      const frame = 'not an entry frame';
+      for (final (name, odd, why) in [
+        ('not-hex', 'entry $a turn - 8 xyz\nturn\n-\na', frame),
+        ('upper-case', 'entry $a turn - 8 ${'A1' * 32}\nturn\n-\na', frame),
+        ('short', 'entry $a turn - 8 ${'a1' * 31}\nturn\n-\na', frame),
+        // Bytes without a header are in no chain, so no trajectory owns them.
+        ('headerless-owned', 'entry $x - - 1 ${'a1' * 32}\nx', frame),
+        // A service before is_logbook 0.5.0 sends no trajectory word.
+        ('five-words', 'entry $a turn - 8\nturn\n-\na', 'not a subscribe'),
+      ]) {
+        final server = await fake('${dir.path}/$name.sock', odd);
+        await expectLater(
+          LogbookReader('${dir.path}/$name.sock').subscribe().toList(),
+          throwsA(isA<ReadBroken>().having((e) => e.why, 'why', contains(why))),
+          reason: name,
+        );
+        await server.close();
+      }
     });
   });
 }

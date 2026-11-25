@@ -14,6 +14,7 @@
 ///
 /// - `subscribe <kinds> from <id>|start`: every entry of those kinds after
 ///   that entry, then `caught-up <head>`, then each new entry as it is added.
+///   Each entry comes with the trajectory that owns its chain, if one does.
 /// - `tip <id>`: the tip of that entry's chain.
 /// - `get <id>`: that entry, with the logbook's 96 bytes for it.
 ///
@@ -28,8 +29,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:is_logbook_format/is_logbook_format.dart';
+import 'package:is_shapes/is_shapes.dart' show TrajectoryId;
 
 export 'package:is_logbook_format/is_logbook_format.dart' show Kind, ObjectId;
+export 'package:is_shapes/is_shapes.dart' show TrajectoryId;
 
 /// What the writer said became of one entry.
 sealed class WriteResult {
@@ -173,20 +176,29 @@ sealed class Subscribed {
 }
 
 /// One recorded entry: its [id], its [kind], the [previous] entry in its
-/// chain (null when it starts one), and its [recorded] bytes, the header
-/// included. They were checked: they are the bytes [id] names, and their
-/// header is [kind] and [previous].
+/// chain (null when it starts one), the [trajectory] that owns its chain,
+/// and its [recorded] bytes, the header included. They were checked: they
+/// are the bytes [id] names, and their header is [kind] and [previous].
 final class Entry extends Subscribed {
   const Entry({
     required this.id,
     required this.kind,
     required this.previous,
+    required this.trajectory,
     required this.recorded,
   });
 
   final ObjectId id;
   final Kind kind;
   final ObjectId? previous;
+
+  /// The trajectory whose chain this entry is on, as the service says: the
+  /// chain starts at that trajectory's `users-assigned-to-trajectory`, or at
+  /// a root of an attaching kind whose parent is on such a chain. Null when
+  /// no trajectory owns the chain, which includes an entry that names a
+  /// trajectory only in its body.
+  final TrajectoryId? trajectory;
+
   final Uint8List recorded;
 
   /// The bytes after the `<kind>\n<previous>\n` header.
@@ -344,7 +356,7 @@ final class LogbookReader {
               out.add(const CaughtUp(null));
             case ['caught-up', final hex] when ObjectId.parse(hex) != null:
               out.add(CaughtUp(ObjectId.parse(hex)));
-            case ['entry', final hex, _, _, _]:
+            case ['entry', final hex, _, _, _, _]:
               final read = await _readEntry(line, frames!);
               if (read is! GotEntry) {
                 throw ReadBroken('entry $hex: subscribed without a header');
@@ -410,7 +422,7 @@ final class LogbookReader {
         return GotUnreadable(Unreadable.values.asNameMap()[why]!);
       case ['failed', _, ...]:
         return GotFailed(line.substring('failed '.length));
-      case ['entry', final hex, _, _, _, final link] when hex == entry.hex:
+      case ['entry', final hex, _, _, _, _, final link] when hex == entry.hex:
         final read = await _readEntry(line, frames);
         _checkLink(entry, link);
         return read;
@@ -458,18 +470,23 @@ final class LogbookReader {
     }
   }
 
-  /// The entry framed by [line], `entry <id> <kind> <previous> <length>`
-  /// (with a sixth word from `get`), and its bytes, checked: they are the
-  /// bytes the id names, and their header is the frame's kind and previous.
-  /// Kind and previous `-` frame bytes without a header.
+  /// The entry framed by [line],
+  /// `entry <id> <kind> <previous> <length> <trajectory>` (with a seventh
+  /// word from `get`), and its bytes, checked: they are the bytes the id
+  /// names, and their header is the frame's kind and previous. Kind and
+  /// previous `-` frame bytes without a header, which are in no chain, so no
+  /// trajectory owns them.
   static Future<Got> _readEntry(String line, _Frames frames) async {
     final words = line.split(' ');
     final id = ObjectId.parse(words[1]);
-    final (kind, previous) = switch ((
+    final (kind, previous, trajectory) = switch ((
       _orNone(words[2], Kind.read),
       _orNone(words[3], ObjectId.parse),
+      _orNone(words[5], TrajectoryId.parse),
     )) {
-      ((final k,)?, (final p,)?) when k != null || p == null => (k, p),
+      ((final k,)?, (final p,)?, (final t,)?)
+          when k != null || (p == null && t == null) =>
+        (k, p, t),
       _ => throw ReadBroken('not an entry frame: $line'),
     };
     final length = int.tryParse(words[4]);
@@ -489,7 +506,13 @@ final class LogbookReader {
       throw ReadBroken('entry ${id.hex}: its header is not $kind ${words[3]}');
     }
     return GotEntry(
-      Entry(id: id, kind: kind, previous: previous, recorded: recorded),
+      Entry(
+        id: id,
+        kind: kind,
+        previous: previous,
+        trajectory: trajectory,
+        recorded: recorded,
+      ),
     );
   }
 
@@ -499,7 +522,7 @@ final class LogbookReader {
     String word,
     T? Function(String) parse,
   ) {
-    // wire-ok: the frame's word for no kind or no previous
+    // wire-ok: the frame's word for no kind, previous or trajectory
     if (word == '-') return (null,);
     return switch (parse(word)) {
       final value? => (value,),

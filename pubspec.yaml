@@ -2,7 +2,7 @@ name: is_logbook_client
 description: >-
   Reads and writes an is_logbook service over its Unix sockets: subscribe,
   tip and get on the read socket, one entry per request on the write socket.
-version: 0.3.0
+version: 0.4.0
 repository: https://github.com/intersyntactic/logbook_client
 
 environment:
@@ -10,8 +10,9 @@ environment:
 
 dependencies:
   is_logbook_format: ^0.1.0
+  is_shapes: ^0.6.0
 
 dev_dependencies:
-  is_logbook: ^0.4.1
+  is_logbook: ^0.5.0
   lints: ^6.1.0
   test: ^1.33.0
