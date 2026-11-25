@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0
+
+For [is_logbook 0.5.0](https://pub.dev/packages/is_logbook/versions/0.5.0),
+whose read socket ends every entry line with the trajectory that owns the
+entry's chain. Breaking:
+
+- On the wire: this version reads only a 0.5.0 service, and 0.3.0 can't
+  read one. `subscribe` frames are
+  `entry <id> <kind> <previous> <length> <trajectory>`, and `get` sends the
+  96 bytes as a seventh word. A five-word entry line is `ReadBroken`.
+- `Entry` has `trajectory`, a `TrajectoryId?` from
+  [is_shapes](https://pub.dev/packages/is_shapes) (null for `-`), and its
+  constructor requires it. `TrajectoryId` is re-exported from here.
+- The trajectory is read strictly: anything but 64 lower-case hex or `-` is
+  `ReadBroken`, and so is a trajectory on bytes without a header, which are
+  in no chain.
+
+A reader that walked `previous` links back to a `users-assigned-to-trajectory`
+to find an entry's trajectory can read `Entry.trajectory` instead, and
+subscribe to only the kinds it uses. One difference: the stamp also covers
+roots of attaching kinds such as `reply-chunk`, which a walk from
+`users-assigned-to-trajectory` roots never reached, so those entries now
+show up on their trajectory.
+
 ## 0.3.0
 
 Depends on [is_logbook_format](https://pub.dev/packages/is_logbook_format)

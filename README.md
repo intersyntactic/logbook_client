@@ -7,7 +7,12 @@ replaces the copies of the socket protocol that each program used to carry.
 It depends on [is_logbook_format](https://pub.dev/packages/is_logbook_format),
 the entry format alone, and not on is_logbook: a program on this client
 reaches the logbook only through the service's sockets, never by opening its
-directory. `Kind` and `ObjectId` are re-exported from here.
+directory. `Kind` and `ObjectId` are re-exported from here, and so is
+`TrajectoryId` from [is_shapes](https://pub.dev/packages/is_shapes).
+
+This version reads is_logbook 0.5.0 and later, whose read socket says which
+trajectory owns each entry's chain. It can't read an older service, and an
+older client can't read a 0.5.0 one.
 
 An entry is its bytes, `<kind>\n<previous>\n<body>`, and its id is their
 `ObjectId` (their sha256). The same bytes are always the same entry.
@@ -39,7 +44,7 @@ To record two, put something in the body that tells them apart.
     final reader = LogbookReader('/path/to/read.sock');
     await for (final item in reader.subscribe(kinds: {turn}, from: last)) {
       switch (item) {
-        case Entry(): // an entry: id, kind, previous, recorded, body
+        case Entry(): // id, kind, previous, trajectory, recorded, body
         case CaughtUp(:final head): // the backlog ended at head
       }
     }
@@ -60,6 +65,14 @@ To record two, put something in the body that tells them apart.
 
 Every entry, from `subscribe` or `get`, is checked: its bytes are the ones
 its id names, and their header is its kind and previous.
+
+`Entry.trajectory` is the trajectory whose chain the entry is on, or null
+when no trajectory owns the chain. A chain is a trajectory's when it starts
+at that trajectory's `users-assigned-to-trajectory`, or at a root of an
+attaching kind (such as `reply-chunk`) whose parent is on one. So a reader
+can subscribe to only the kinds it uses and still know each entry's
+trajectory, without walking `previous` links. An entry that names a
+trajectory only in its body, such as an outcome or an admission, has null.
 
 Everything the service sends is read strictly. A failure is a `ReadFailure`:
 `ReadUnreachable` (not reached, closed early, or too slow), `ReadRefused`
